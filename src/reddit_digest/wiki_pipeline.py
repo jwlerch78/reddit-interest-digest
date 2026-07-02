@@ -30,6 +30,7 @@ from datetime import date
 from email.message import EmailMessage
 
 import anthropic
+from dotenv import load_dotenv
 
 log = logging.getLogger("wiki_pipeline")
 
@@ -187,6 +188,10 @@ def _require_env(name: str) -> str:
 
 
 def run(dry_run: bool) -> int:
+    # Pick up ANTHROPIC_API_KEY / SMTP / WIKI_DATA_URL from a local .env if present
+    # (gitignored). Real shell env vars still take precedence.
+    load_dotenv()
+
     url = _require_env("WIKI_DATA_URL")
     api_key = _require_env("ANTHROPIC_API_KEY")
     model = os.environ.get("SUMMARY_MODEL", _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
