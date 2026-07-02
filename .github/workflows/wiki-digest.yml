@@ -1,0 +1,40 @@
+name: Daily Wiki AI Digest
+
+# Reads the public ModRadarAI data page (posts a Devvit app collected from a
+# subreddit), summarizes the themes with Claude, and emails the result.
+# No Reddit API credentials required.
+
+on:
+  schedule:
+    - cron: "30 12 * * *"   # 12:30 UTC daily (after the Devvit app's daily run)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e .
+      - name: Summarize + email
+        env:
+          WIKI_DATA_URL: ${{ secrets.WIKI_DATA_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUMMARY_MODEL: ${{ secrets.SUMMARY_MODEL || 'claude-sonnet-4-6' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+        run: python -m reddit_digest.wiki_pipeline
