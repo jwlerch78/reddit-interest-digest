@@ -37,6 +37,30 @@ SYSTEM_PROMPT = (
     "on the provided posts; never invent posts or facts."
 )
 
+# The draft replies are copy-paste-ready comments John posts himself, so they must
+# sound like HIM — concise, plain, human — not like an AI or a blog post.
+REPLY_STYLE = (
+    "DRAFT REPLY STYLE — write every draft reply the way John actually talks on Reddit:\n"
+    "- Short: 1-3 sentences. Two is ideal. Never a paragraph, never a wall of options.\n"
+    "- Plain and human. Use contractions. Sound like a real person typing a quick, helpful "
+    "comment — NOT an assistant. No 'Great question', no 'Hope this helps', no sign-off, no "
+    "numbered lists, no bolded headers inside the reply.\n"
+    "- Lead with the single most useful, concrete answer. Skip caveats, hedging, and 'you could "
+    "also…' filler. If there are three options, name the one you'd actually pick.\n"
+    "- Not pithy or clever. Understated and direct beats polished.\n"
+    "- If a Dashie mention genuinely fits, it's ONE short casual aside in first person "
+    "(e.g. 'fwiw I run Dashie on a couple Fire tablets for exactly this'), never a pitch, and "
+    "drop it entirely if it wouldn't actually help them.\n\n"
+    "EXAMPLE — someone asks what to run for a wall-mounted HA dashboard:\n"
+    "  TOO AI-ISH (do NOT write like this): \"For a wall-mounted HA dashboard with animations "
+    "and camera streams, a Raspberry Pi 4 with at least 4GB of RAM is generally recommended. For "
+    "storage, an SSD will offer significantly better performance and reliability compared to a "
+    "microSD card...\"\n"
+    "  IN JOHN'S VOICE (write like this): \"A Pi 4 works, but honestly a cheap Android tablet is "
+    "simpler for a wall display — no separate screen to wire up. If you do go Pi, boot off an SSD, "
+    "microSD cards die fast with HA's constant writes.\""
+)
+
 
 def _serialize(posts: list[RssPost], max_posts: int) -> str:
     lines: list[str] = []
@@ -53,6 +77,7 @@ def _serialize(posts: list[RssPost], max_posts: int) -> str:
 def _user_prompt(subreddit: str, posts: list[RssPost], max_posts: int) -> str:
     return (
         f"{DASHIE_CONTEXT}\n\n"
+        f"{REPLY_STYLE}\n\n"
         f"Below are recent posts from r/{subreddit}. Produce a Markdown \"listening brief\" with "
         f"the three sections below. Only include posts that genuinely fit a section; if a section "
         f"has none, write \"_None this time._\". Reference each post by its exact title, and "
@@ -62,13 +87,14 @@ def _user_prompt(subreddit: str, posts: list[RssPost], max_posts: int) -> str:
         f"tablets, kiosk displays, HA-on-a-tablet, family dashboards, screen sleep/wake, Fire "
         f"tablet, Echo Show, photo frames). For each such post:\n"
         f"- **[exact title]** ([link]) — one line on their problem.\n"
-        f"  - DRAFT REPLY: first, a genuinely useful answer to their actual HA problem. Then, ONLY "
-        f"if truly relevant, a brief and honest Dashie mention (e.g. \"Side note — I've been "
-        f"running Dashie (https://dashieapp.com) on my Fire tablets…\"). Never salesy; skip the "
-        f"mention if it wouldn't genuinely help them.\n\n"
+        f"  - DRAFT REPLY: the answer to their actual problem in 1-3 short sentences, in John's "
+        f"voice (see DRAFT REPLY STYLE). Fold any Dashie mention into that same short reply as a "
+        f"casual aside — do not add a separate sentence for it. Skip the mention if it wouldn't "
+        f"genuinely help.\n\n"
         f"## 🔵 Share expertise\n"
         f"Posts where John can add helpful expertise (family dashboards, HA tips, hardware) with "
-        f"NO product plug at all. For each: **[exact title]** ([link]) + a short DRAFT REPLY.\n\n"
+        f"NO product plug at all. For each: **[exact title]** ([link]) + a DRAFT REPLY of 1-3 "
+        f"short sentences in John's voice.\n\n"
         f"## 🟡 Feature ideas / pain points / competitors\n"
         f"Signals for the roadmap and competitive awareness — competitor launches or alternatives, "
         f"recurring pain points, notable feature requests. NO draft replies here. For each: "
