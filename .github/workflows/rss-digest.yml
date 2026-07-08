@@ -1,0 +1,37 @@
+name: Daily Dashie Listening Brief (RSS)
+
+# Reads r/homeassistant via its public RSS feed (no Reddit API creds), has Claude
+# write the Dashie Listening Brief, and emails it via Resend. Runs entirely on the
+# GitHub runner — no Devvit, no Reddit auth. RSS reads work from GitHub's datacenter
+# IPs (verified). Adjust the cron below to change the delivery time.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"   # 13:00 UTC daily (~8-9am US Eastern)
+  workflow_dispatch: {}     # allow manual runs from the Actions tab
+
+concurrency:
+  group: dashie-listening-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e .
+      - name: Fetch RSS -> brief -> email
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          BRIEF_SUBREDDIT: homeassistant
+          BRIEF_LISTING: top-day
+          BRIEF_MAX_POSTS: "25"
+          SUMMARY_MODEL: claude-sonnet-4-6
+        run: python -m reddit_digest.run_rss
