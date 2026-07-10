@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false      # one source failing must not cancel the others
+      max-parallel: 1       # run sources sequentially so we don't double-hit Reddit at once
       matrix:
         # ⬇️ To add a source, add a block here. `mode: brief` = full listening brief
         # (help/plug/expertise/competitor signals). `mode: activity` = short new-posts
