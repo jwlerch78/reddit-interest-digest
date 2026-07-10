@@ -105,6 +105,49 @@ def _user_prompt(subreddit: str, posts: list[RssPost], max_posts: int) -> str:
     )
 
 
+ACTIVITY_SYSTEM = (
+    "You monitor Dashie's OWN subreddit (r/Dashieapp) for the founder, John. Your job is a "
+    "quick heads-up: what got posted, and which posts look like they need John's attention "
+    "(a support question, a bug report, or notable feedback). This is NOT marketing analysis — "
+    "no draft replies, no plugs. Be brief and factual. Base everything ONLY on the posts given."
+)
+
+
+def generate_activity_note(
+    posts: list[RssPost],
+    subreddit: str,
+    *,
+    api_key: str,
+    model: str = "claude-sonnet-4-6",
+    max_tokens: int = 1500,
+) -> str:
+    """Short 'what's new on our sub' note. Assumes `posts` is already the new ones."""
+    client = anthropic.Anthropic(api_key=api_key)
+    listing = "\n".join(
+        f"- {p.title}"
+        + (f"\n  {p.body[:400]}" if p.body else "")
+        + f"\n  by {p.author or 'unknown'} — {p.url}"
+        for p in posts
+    )
+    prompt = (
+        f"These are the new posts in r/{subreddit} since yesterday. Write a short Markdown note:\n"
+        f"- One-line summary at top (e.g. \"3 new posts — 1 looks like a bug report\").\n"
+        f"- Then one bullet per post: **[exact title]** ([link]) — a ≤12-word gist, and tag it "
+        f"with ONE of ❓question · 🐛 bug · 💬 feedback · 📣 other so John can triage at a glance.\n"
+        f"No draft replies, no analysis beyond the gist.\n\nPOSTS:\n{listing}"
+    )
+    resp = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=ACTIVITY_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    if not text:
+        raise RuntimeError("Claude returned an empty activity note")
+    return text
+
+
 def generate_brief(
     posts: list[RssPost],
     subreddit: str,

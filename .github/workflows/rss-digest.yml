@@ -1,14 +1,17 @@
 name: Daily Dashie Listening Brief (RSS)
 
-# Reads a subreddit via its public RSS feed (no Reddit API creds), has Claude write
-# the Dashie Listening Brief, and emails it via Resend. Runs entirely on the GitHub
-# runner — no Devvit, no Reddit auth. RSS reads work from GitHub's datacenter IPs
-# (verified). See README.md → "Tweaking" and "Adding more subreddits".
+# Reads a subreddit via its public RSS feed (no Reddit API creds), then either writes
+# the Dashie Listening Brief (mode: brief) or a short "what's new on our sub" note
+# (mode: activity), and emails it via Resend. Runs on the GitHub runner — no Devvit,
+# no Reddit auth. See README.md → "Tweaking" and "Adding more sources".
 
 on:
   schedule:
-    - cron: "0 13 * * *"   # 13:00 UTC daily (~8-9am US Eastern). Change to retime.
-  workflow_dispatch: {}     # allow manual runs from the Actions tab
+    # 10:40 UTC = ~6:40am US Eastern (EDT). Scheduled OFF the top-of-hour on purpose:
+    # GitHub delays `:00` crons by hours at peak load. Even so, delivery time is
+    # best-effort, not guaranteed. (Winter/EST shifts this ~1h later — retime in Nov.)
+    - cron: "40 10 * * *"
+  workflow_dispatch: {}
 
 concurrency:
   group: dashie-listening-brief
@@ -18,14 +21,18 @@ jobs:
   brief:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false      # one subreddit failing must not cancel the others
+      fail-fast: false      # one source failing must not cancel the others
       matrix:
-        # ⬇️ To add a subreddit, add it to this list (one line) and commit. Each
-        # entry produces its own brief + email. No other changes needed.
-        subreddit:
-          - homeassistant
-          # - smarthome
-          # - homeautomation
+        # ⬇️ To add a source, add a block here. `mode: brief` = full listening brief
+        # (help/plug/expertise/competitor signals). `mode: activity` = short new-posts
+        # note (used for our own sub; only emails when there ARE new posts).
+        include:
+          - subreddit: homeassistant
+            mode: brief
+            listing: top-day
+          - subreddit: Dashieapp
+            mode: activity
+            listing: new
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,14 +40,16 @@ jobs:
           python-version: "3.11"
       - name: Install
         run: pip install -e .
-      - name: Fetch RSS -> brief -> email (r/${{ matrix.subreddit }})
+      - name: r/${{ matrix.subreddit }} (${{ matrix.mode }})
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
           DIGEST_TO: ${{ secrets.DIGEST_TO }}
           BRIEF_SUBREDDIT: ${{ matrix.subreddit }}
-          BRIEF_LISTING: top-day     # top of last 24h. Also: "new" | "hot"
+          BRIEF_MODE: ${{ matrix.mode }}
+          BRIEF_LISTING: ${{ matrix.listing }}
           BRIEF_MAX_POSTS: "25"
+          BRIEF_LOOKBACK_HOURS: "24"
           SUMMARY_MODEL: claude-sonnet-4-6
         run: python -m reddit_digest.run_rss

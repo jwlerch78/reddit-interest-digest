@@ -20,11 +20,11 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
-from .brief import generate_brief
+from .brief import generate_activity_note, generate_brief
 from .resend_mailer import send_email
-from .rss_client import fetch_posts
+from .rss_client import RssPost, fetch_posts
 
 log = logging.getLogger("reddit_digest.run_rss")
 
@@ -36,14 +36,34 @@ def _require(name: str) -> str:
     return value
 
 
+def _posts_since(posts: list[RssPost], hours: int) -> list[RssPost]:
+    """Keep posts whose feed timestamp is within the last `hours`. Undated posts are
+    kept (better to over-notify than silently drop)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    fresh: list[RssPost] = []
+    for p in posts:
+        if not p.created:
+            fresh.append(p)
+            continue
+        try:
+            when = datetime.fromisoformat(p.created.replace("Z", "+00:00"))
+            if when >= cutoff:
+                fresh.append(p)
+        except ValueError:
+            fresh.append(p)
+    return fresh
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
 
     subreddit = os.environ.get("BRIEF_SUBREDDIT", "homeassistant").strip() or "homeassistant"
+    mode = os.environ.get("BRIEF_MODE", "brief").strip() or "brief"
     listing = os.environ.get("BRIEF_LISTING", "top-day").strip() or "top-day"
     max_posts = int(os.environ.get("BRIEF_MAX_POSTS", "25") or "25")
+    lookback = int(os.environ.get("BRIEF_LOOKBACK_HOURS", "24") or "24")
     model = os.environ.get("SUMMARY_MODEL", "claude-sonnet-4-6").strip() or "claude-sonnet-4-6"
 
     anthropic_key = _require("ANTHROPIC_API_KEY")
@@ -57,18 +77,28 @@ def main() -> int:
         log.error("No posts fetched from r/%s — aborting without sending.", subreddit)
         return 1
 
-    # 2. Claude writes the listening brief.
-    brief_md = generate_brief(
-        posts, subreddit, api_key=anthropic_key, model=model, max_posts=max_posts
-    )
-    header = (
-        f"# Dashie Listening Brief — r/{subreddit}\n\n"
-        f"_{date.today().isoformat()} • {len(posts)} posts • top of last 24h_\n\n"
-    )
-    full_md = header + brief_md
+    today = date.today().isoformat()
 
-    # 3. Email it.
-    subject = f"Dashie Listening Brief — r/{subreddit} — {date.today().isoformat()}"
+    # 2/3. Generate + email, per mode.
+    if mode == "activity":
+        # Monitor our own sub: only email when there are genuinely NEW posts.
+        fresh = _posts_since(posts, lookback)
+        if not fresh:
+            log.info("r/%s: no new posts in last %dh — no email sent.", subreddit, lookback)
+            return 0
+        note = generate_activity_note(fresh, subreddit, api_key=anthropic_key, model=model)
+        full_md = f"# r/{subreddit} activity — {today}\n\n{note}"
+        subject = f"r/{subreddit} activity — {len(fresh)} new — {today}"
+    else:
+        brief_md = generate_brief(
+            posts, subreddit, api_key=anthropic_key, model=model, max_posts=max_posts
+        )
+        full_md = (
+            f"# Dashie Listening Brief — r/{subreddit}\n\n"
+            f"_{today} • {len(posts)} posts • top of last 24h_\n\n{brief_md}"
+        )
+        subject = f"Dashie Listening Brief — r/{subreddit} — {today}"
+
     send_email(
         api_key=resend_key, sender=sender, to=recipient, subject=subject, markdown=full_md
     )

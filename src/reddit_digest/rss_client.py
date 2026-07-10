@@ -37,6 +37,7 @@ class RssPost:
     body: str  # plain-text post body (HTML stripped), may be empty for link posts
     url: str
     author: str
+    created: str = ""  # ISO8601 published time from the feed (may be empty)
 
 
 def _feed_url(subreddit: str, listing: str) -> str:
@@ -61,7 +62,9 @@ def _fetch(url: str, *, attempts: int = 4, backoff: float = 15.0) -> str:
         except urllib.error.HTTPError as exc:
             last_err = exc
             log.warning("RSS %s -> HTTP %s (attempt %d/%d)", url, exc.code, attempt, attempts)
-            if exc.code not in (429, 500, 502, 503, 504):
+            # Reddit rate-limits with BOTH 403 "Blocked" and 429 — retry both with
+            # backoff. (A genuine 403, e.g. a private sub, just fails after the retries.)
+            if exc.code not in (403, 429, 500, 502, 503, 504):
                 raise
         except Exception as exc:  # noqa: BLE001 - network hiccups are retryable
             last_err = exc
@@ -93,13 +96,19 @@ def _parse(feed_xml: str) -> list[RssPost]:
         content_el = entry.find(f"{_ATOM}content")
         id_el = entry.find(f"{_ATOM}id")
         author_el = entry.find(f"{_ATOM}author/{_ATOM}name")
+        published_el = entry.find(f"{_ATOM}published")
+        updated_el = entry.find(f"{_ATOM}updated")
         title = html.unescape((title_el.text or "").strip()) if title_el is not None else ""
         url = link_el.get("href", "") if link_el is not None else ""
         body = _text(content_el.text or "") if content_el is not None else ""
         pid = (id_el.text or "").strip() if id_el is not None else url
         author = (author_el.text or "").strip() if author_el is not None else ""
+        pub_el = published_el if published_el is not None else updated_el
+        created = (pub_el.text or "").strip() if pub_el is not None else ""
         if title and url:
-            posts.append(RssPost(id=pid, title=title, body=body, url=url, author=author))
+            posts.append(
+                RssPost(id=pid, title=title, body=body, url=url, author=author, created=created)
+            )
     return posts
 
 
