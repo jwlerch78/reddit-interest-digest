@@ -50,7 +50,7 @@ jobs:
           BRIEF_SUBREDDIT: ${{ matrix.subreddit }}
           BRIEF_MODE: ${{ matrix.mode }}
           BRIEF_LISTING: ${{ matrix.listing }}
-          BRIEF_MAX_POSTS: "25"
+          BRIEF_MAX_POSTS: "75"     # use the whole top-of-day feed (~60-70 posts), not just 25
           BRIEF_LOOKBACK_HOURS: "24"
           SUMMARY_MODEL: claude-sonnet-4-6
         run: python -m reddit_digest.run_rss

@@ -46,11 +46,11 @@ def _feed_paths(subreddit: str, listing: str) -> list[str]:
     it's a useful fallback for the same content."""
     sub = subreddit.strip().lstrip("r/").strip("/")
     if listing == "top-day":
-        tail = "top/.rss?t=day&limit=50"
+        tail = "top/.rss?t=day&limit=100"
     elif listing == "hot":
-        tail = "hot/.rss?limit=50"
+        tail = "hot/.rss?limit=100"
     else:
-        tail = "new/.rss?limit=50"
+        tail = "new/.rss?limit=100"
     return [
         f"https://www.reddit.com/r/{sub}/{tail}",
         f"https://old.reddit.com/r/{sub}/{tail}",
