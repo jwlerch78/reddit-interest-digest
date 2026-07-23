@@ -24,14 +24,15 @@ jobs:
       fail-fast: false      # one source failing must not cancel the others
       max-parallel: 1       # run sources sequentially so we don't double-hit Reddit at once
       matrix:
-        # ⬇️ To add a source, add a block here. `mode: brief` = full listening brief
-        # (help/plug/expertise/competitor signals). `mode: activity` = short new-posts
-        # note (used for our own sub; only emails when there ARE new posts).
+        # Two emails: the consolidated listening brief, and our own-sub activity monitor.
+        # - mode: listening = ONE email combining every source in LISTENING_SOURCES
+        #   (run_rss.py) with its lens. Add communities THERE, not here.
+        # - mode: activity = short new-posts note for our own sub (only emails if new posts).
         include:
-          - subreddit: homeassistant
-            mode: brief
-            listing: top-day
-          - subreddit: Dashieapp
+          - name: Listening brief (HA + families)
+            mode: listening
+          - name: r/Dashieapp activity
+            subreddit: Dashieapp
             mode: activity
             listing: new
     steps:
@@ -41,7 +42,7 @@ jobs:
           python-version: "3.11"
       - name: Install
         run: pip install -e .
-      - name: r/${{ matrix.subreddit }} (${{ matrix.mode }})
+      - name: ${{ matrix.name }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

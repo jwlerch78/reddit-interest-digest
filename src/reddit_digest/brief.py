@@ -160,6 +160,99 @@ def generate_activity_note(
     return text
 
 
+DASHIE_CONTEXT_FAMILY = (
+    "CONTEXT — Dashie for families (the non-Home-Assistant angle): Dashie (https://dashieapp.com) "
+    "turns an inexpensive tablet, Amazon Fire tablet, or Echo Show into a family command center — "
+    "a shared family calendar, photo slideshow, chores/rewards, weather, and to-dos — controlled "
+    "hands-free by VOICE. Think 'voice-controlled Skylight': the same shared-family-calendar-on-a-"
+    "display idea as Skylight Calendar, DAKboard, Hearth, or Cozi, but it runs on hardware you "
+    "already own (no $250-600 proprietary screen), has no mandatory subscription lock-in, and adds "
+    "voice (ask what's on the calendar, add events, set timers). Best-fit people: parents "
+    "frustrated with the Echo Show's weak family-display; anyone shopping for a Skylight / DAKboard "
+    "/ Hearth alternative; DIY wall-tablet family-calendar setups."
+)
+
+COMMUNITY_SYSTEM = (
+    "You help John build genuine presence in family / smart-home communities where Dashie's "
+    "non-Home-Assistant 'family command center' could resonate. PRIMARY goal: surface easy, "
+    "low-stakes posts where John and his family can participate to build real karma (so they can "
+    "later mention Dashie without being auto-flagged as spam). SECONDARY: posts where the non-HA "
+    "Dashie genuinely fits (Skylight/DAKboard-alternative shopping, Echo-Show family-display "
+    "frustration, DIY family-calendar displays). Every draft is a friendly, hedged PEER comment — "
+    "never an ad, never a know-it-all. Base everything ONLY on the provided posts."
+)
+
+
+def _serialize_with_sub(posts: list[RssPost], max_posts: int) -> str:
+    lines: list[str] = []
+    for p in posts[:max_posts]:
+        sub = p.url.split("/r/")[1].split("/")[0] if "/r/" in p.url else "?"
+        body = (p.body or "").strip()
+        block = f"- [r/{sub}] {p.title}"
+        if body:
+            block += f"\n  {body[:600]}"
+        block += f"\n  link: {p.url}"
+        lines.append(block)
+    return "\n".join(lines)
+
+
+def generate_community_brief(
+    posts: list[RssPost],
+    label: str,
+    *,
+    api_key: str,
+    model: str = "claude-sonnet-4-6",
+    max_posts: int = 50,
+    max_tokens: int = 3000,
+) -> str:
+    """Non-HA 'families' brief: participation-first (karma) + tactful plug on the
+    family-display / voice angle. Posts are tagged with their source subreddit."""
+    client = anthropic.Anthropic(api_key=api_key)
+    prompt = (
+        f"{DASHIE_CONTEXT_FAMILY}\n\n{REPLY_STYLE}\n\n"
+        f"Below are recent posts from {label} (each tagged with its source subreddit). Produce a "
+        f"Markdown brief with the three sections below. Only include genuinely fitting posts; if a "
+        f"section has none, write \"_None this time._\". Reference each by exact title + link and "
+        f"note its subreddit. Tailor to the sub: r/amazonecho & r/alexa skew VOICE + Echo-Show "
+        f"family-display; r/smarthome skews family-display / Skylight-DAKboard alternatives. A post "
+        f"appears in at most one section.\n\n"
+        f"## 🟣 General participation (karma-building) — PRIORITIZE THIS\n"
+        f"Approachable, low-stakes posts where a friendly comment is natural (opinions, show-and-"
+        f"tell, 'what do you use', wins, questions a non-expert can answer). Goal = genuine karma "
+        f"for John AND family. For each: **[exact title]** (r/sub, [link]) — one line why it's "
+        f"approachable + a SHORT friendly hedged DRAFT COMMENT postable as-is. No Dashie mention.\n\n"
+        f"## 🟢 Tactful plug (family-display / voice angle)\n"
+        f"Posts where the non-HA Dashie genuinely fits (Skylight/DAKboard/Hearth alternative "
+        f"shopping, Echo-Show family-display frustration, DIY family-calendar displays, wall-tablet "
+        f"organizers). For each: **[exact title]** (r/sub, [link]) — one line on their need + a "
+        f"hedged DRAFT REPLY that helps FIRST, then folds in a brief casual Dashie mention (non-HA "
+        f"framing). Drop the mention if it wouldn't genuinely help.\n\n"
+        f"## 🟡 Signals (competitors / pain points)\n"
+        f"Skylight/DAKboard/Cozi/Hearth mentions, family-organization pain points, or feature "
+        f"requests relevant to Dashie's non-HA roadmap. NO draft replies. **[exact title]** "
+        f"(r/sub, [link]) — 1-2 lines on the signal.\n\n"
+        f"These are DRAFTS for John to post MANUALLY, if at all.\n\n"
+        f"POSTS:\n{_serialize_with_sub(posts, max_posts)}"
+    )
+    log.info(
+        "Requesting community brief from %s — %d posts, %d prompt chars",
+        model,
+        min(len(posts), max_posts),
+        len(prompt),
+    )
+    resp = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=COMMUNITY_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+    if not text:
+        raise RuntimeError("Claude returned an empty community brief")
+    log.info("Community brief received — %d chars", len(text))
+    return text
+
+
 def generate_brief(
     posts: list[RssPost],
     subreddit: str,

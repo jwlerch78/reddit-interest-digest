@@ -22,11 +22,32 @@ import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 
-from .brief import generate_activity_note, generate_brief
+from .brief import generate_activity_note, generate_brief, generate_community_brief
 from .resend_mailer import send_email
 from .rss_client import RssPost, fetch_posts
 
 log = logging.getLogger("reddit_digest.run_rss")
+
+# The ONE consolidated "Dashie Listening Brief" email is composed of these sources, each
+# rendered with its own lens ("ha" = full HA brief; "community" = non-HA families lens:
+# participation-first + tactful Skylight/voice plug). Add a source here to include it.
+# Fetches run sequentially with ~a minute of LLM time between them, which also spaces out
+# the Reddit requests. Use a multireddit ("a+b") to add subs without extra requests.
+LISTENING_SOURCES = [
+    {
+        "feed": "homeassistant",
+        "listing": "top-day",
+        "lens": "ha",
+        "heading": "🏠 Home Assistant — r/homeassistant",
+    },
+    {
+        "feed": "smarthome+amazonecho",
+        "listing": "top-day",
+        "lens": "community",
+        "label": "r/smarthome + r/amazonecho",
+        "heading": "👨‍👩‍👧 Families — r/smarthome + r/amazonecho",
+    },
+]
 
 
 def _require(name: str) -> str:
@@ -70,16 +91,48 @@ def main() -> int:
     resend_key = _require("RESEND_API_KEY")
     sender = _require("DIGEST_FROM")
     recipient = _require("DIGEST_TO")
+    today = date.today().isoformat()
 
-    # 1. Read Reddit via RSS (no creds).
+    def _send(subject: str, markdown: str) -> None:
+        send_email(api_key=resend_key, sender=sender, to=recipient, subject=subject, markdown=markdown)
+
+    # --- Consolidated listening brief: several sources -> ONE email ---
+    if mode == "listening":
+        sections: list[str] = []
+        ok = 0
+        for src in LISTENING_SOURCES:
+            try:
+                posts = fetch_posts(src["feed"], listing=src["listing"], limit=max_posts)
+                if src["lens"] == "community":
+                    body = generate_community_brief(
+                        posts, src.get("label", src["feed"]),
+                        api_key=anthropic_key, model=model, max_posts=max_posts,
+                    )
+                else:
+                    body = generate_brief(
+                        posts, src["feed"], api_key=anthropic_key, model=model, max_posts=max_posts,
+                    )
+                sections.append(f"# {src['heading']}\n_{len(posts)} posts_\n\n{body}")
+                ok += 1
+            except Exception as exc:  # one bad source must not sink the whole email
+                log.error("Source %s failed: %s", src["feed"], exc)
+                sections.append(f"# {src['heading']}\n\n_Couldn't fetch this source today._")
+        if ok == 0:
+            log.error("All listening sources failed — not sending.")
+            return 1
+        _send(
+            f"Dashie Listening Brief — {today}",
+            f"# Dashie Listening Brief — {today}\n\n" + "\n\n---\n\n".join(sections),
+        )
+        log.info("Done.")
+        return 0
+
+    # --- Single-source modes (activity monitor / single-sub brief) ---
     posts = fetch_posts(subreddit, listing=listing, limit=max_posts)
     if not posts:
         log.error("No posts fetched from r/%s — aborting without sending.", subreddit)
         return 1
 
-    today = date.today().isoformat()
-
-    # 2/3. Generate + email, per mode.
     if mode == "activity":
         # Monitor our own sub: only email when there are genuinely NEW posts.
         fresh = _posts_since(posts, lookback)
@@ -87,20 +140,19 @@ def main() -> int:
             log.info("r/%s: no new posts in last %dh — no email sent.", subreddit, lookback)
             return 0
         note = generate_activity_note(fresh, subreddit, api_key=anthropic_key, model=model)
-        full_md = f"# r/{subreddit} activity — {today}\n\n{note}"
-        subject = f"r/{subreddit} activity — {len(fresh)} new — {today}"
-    else:
-        brief_md = generate_brief(
-            posts, subreddit, api_key=anthropic_key, model=model, max_posts=max_posts
+        _send(
+            f"r/{subreddit} activity — {len(fresh)} new — {today}",
+            f"# r/{subreddit} activity — {today}\n\n{note}",
         )
-        full_md = (
-            f"# Dashie Listening Brief — r/{subreddit}\n\n"
-            f"_{today} • {len(posts)} posts • top of last 24h_\n\n{brief_md}"
-        )
-        subject = f"Dashie Listening Brief — r/{subreddit} — {today}"
+        log.info("Done.")
+        return 0
 
-    send_email(
-        api_key=resend_key, sender=sender, to=recipient, subject=subject, markdown=full_md
+    brief_md = generate_brief(
+        posts, subreddit, api_key=anthropic_key, model=model, max_posts=max_posts
+    )
+    _send(
+        f"Dashie Listening Brief — r/{subreddit} — {today}",
+        f"# Dashie Listening Brief — r/{subreddit}\n\n_{today} • {len(posts)} posts_\n\n{brief_md}",
     )
     log.info("Done.")
     return 0
