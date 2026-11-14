@@ -9,12 +9,26 @@ It runs entirely on **GitHub Actions** on a daily cron. No servers, no Reddit AP
 credentials, no Devvit, nothing running on your Mac.
 
 ```
-GitHub Actions (daily 13:00 UTC)
+GitHub Actions (daily 11:40 UTC in winter / 10:40 in summer — see DST note below)
   1. fetch r/<sub> public RSS      (no auth — bypasses Reddit's bot wall)
   2. parse ~25 posts (top of 24h)
   3. Claude writes the brief       (Dashie Listening Brief format)
   4. email it via Resend
 ```
+
+> ### 🔴 Two scheduling facts that have already bitten, 2026-11-14
+>
+> **1. GitHub disables this workflow after 60 days of REPOSITORY inactivity — not workflow
+> inactivity.** The brief ran green every single day and was switched off anyway on
+> 2026-10-26, exactly 60 days after the last push (2026-08-27); nobody noticed for 19 days.
+> The counter watches for *commits*, so an automation that works perfectly and is never
+> edited is precisely the kind that gets swept. The `keepalive` job now commits a one-line
+> run log after every run, which is repository activity, so the clock resets daily.
+> **Do not remove that job to tidy the history.**
+>
+> **2. The cron is UTC and does NOT follow US daylight saving.** `40 11` delivers ~6:40am
+> Eastern in winter (EST); `40 10` is the summer (EDT) equivalent. Re-time it at each DST
+> change, or accept an hour's drift twice a year.
 
 > **This is the active mechanism.** The older PRAW/relevance-scoring pipeline
 > (`reddit_client.py`, `scorer.py`, `digest.py`, `wiki_pipeline.py`) is **deprecated** —

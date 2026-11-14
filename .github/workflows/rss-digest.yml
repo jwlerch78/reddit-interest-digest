@@ -7,10 +7,12 @@ name: Daily Dashie Listening Brief (RSS)
 
 on:
   schedule:
-    # 10:40 UTC = ~6:40am US Eastern (EDT). Scheduled OFF the top-of-hour on purpose:
-    # GitHub delays `:00` crons by hours at peak load. Even so, delivery time is
-    # best-effort, not guaranteed. (Winter/EST shifts this ~1h later — retime in Nov.)
-    - cron: "40 10 * * *"
+    # 11:40 UTC = ~6:40am US Eastern in WINTER (EST, UTC-5). Retimed 2026-11-14 from
+    # "40 10" (which was EDT-correct and delivered at 5:40am once the clocks went back).
+    # Scheduled OFF the top-of-hour on purpose: GitHub delays `:00` crons by hours at
+    # peak load. Even so, delivery time is best-effort, not guaranteed.
+    # ⚠️ Re-time each DST change: summer (EDT, UTC-4) wants "40 10", winter wants "40 11".
+    - cron: "40 11 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -55,3 +57,37 @@ jobs:
           BRIEF_LOOKBACK_HOURS: "24"
           SUMMARY_MODEL: claude-sonnet-4-6
         run: python -m reddit_digest.run_rss
+
+  # 🔴 WHY THIS JOB EXISTS — DO NOT "TIDY" IT AWAY.
+  # GitHub disables a PUBLIC repo's scheduled workflows after 60 days of REPOSITORY
+  # inactivity — not workflow inactivity. This brief was running green EVERY DAY and was
+  # switched off anyway on 2026-10-26, exactly 60 days after the last push (2026-08-27).
+  # Nobody noticed for 19 days. The counter watches for COMMITS, so a workflow that works
+  # perfectly and is never edited is exactly the kind that gets swept.
+  # Committing the run log is repository activity, so the 60-day clock resets daily and the
+  # schedule never lapses again. It also leaves a readable record of what ran and when.
+  keepalive:
+    needs: brief
+    if: always()          # must also run when the brief FAILS — a run of failures would
+                          # otherwise let the 60-day timer expire silently
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # overrides a read-only default GITHUB_TOKEN; needed for the push
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the run and push
+        run: |
+          set -euo pipefail
+          printf '%s  run=%s  brief=%s\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${GITHUB_RUN_ID}" "${{ needs.brief.result }}" \
+            >> .github/last-run.log
+          # Bound the file: keep ~13 months so history stays useful without growing forever.
+          tail -n 400 .github/last-run.log > .github/last-run.log.tmp
+          mv .github/last-run.log.tmp .github/last-run.log
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last-run.log
+          git commit -m "chore(keepalive): record run ${GITHUB_RUN_ID} — resets GitHub's 60-day scheduled-workflow timer"
+          # Another run (or a human push) may have landed since checkout; rebase rather than fail.
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
