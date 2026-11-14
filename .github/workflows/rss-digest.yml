@@ -76,17 +76,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Record the run and push
+        # ⚠️ The file is .txt, NOT .log, and that is load-bearing: .gitignore:22 ignores
+        # `*.log`, so `git add` refused it and this job exited 1 on its first real run
+        # (2026-11-14). Renaming the extension back would break the keepalive SILENTLY —
+        # the brief would keep arriving for 60 days and then stop again.
         run: |
           set -euo pipefail
           printf '%s  run=%s  brief=%s\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${GITHUB_RUN_ID}" "${{ needs.brief.result }}" \
-            >> .github/last-run.log
+            >> .github/last-run.txt
           # Bound the file: keep ~13 months so history stays useful without growing forever.
-          tail -n 400 .github/last-run.log > .github/last-run.log.tmp
-          mv .github/last-run.log.tmp .github/last-run.log
+          tail -n 400 .github/last-run.txt > .github/last-run.txt.tmp
+          mv .github/last-run.txt.tmp .github/last-run.txt
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/last-run.log
+          git add .github/last-run.txt
           git commit -m "chore(keepalive): record run ${GITHUB_RUN_ID} — resets GitHub's 60-day scheduled-workflow timer"
           # Another run (or a human push) may have landed since checkout; rebase rather than fail.
           git pull --rebase --autostash origin main
